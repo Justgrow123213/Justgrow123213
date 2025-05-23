@@ -1,15 +1,16 @@
 import os
+import json
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage, AIMessage
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import ChatPromptTemplate
+import openai
 
 from real_estate_agents.database.property_db import PropertyDatabase
 
 # Load environment variables
 load_dotenv()
+
+# Set OpenAI API key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class SalesAgent:
     """
@@ -23,14 +24,10 @@ class SalesAgent:
     4. Present property recommendations in a user-friendly format
     """
     
-    def __init__(self, property_db: PropertyDatabase):
+    def __init__(self, property_db: PropertyDatabase, model_name: str = "gpt-4"):
         self.property_db = property_db
-        self.llm = ChatOpenAI(
-            model_name="gpt-4",
-            temperature=0.7,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
-        self.memory = ConversationBufferMemory(return_messages=True)
+        self.model_name = model_name
+        self.conversation_history = []  # List of message dicts with 'role' and 'content'
         
     def extract_requirements(self, conversation: str) -> Dict[str, Any]:
         """
@@ -69,20 +66,21 @@ class SalesAgent:
         If a piece of information is not mentioned, set the corresponding field to null.
         """
         
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Extract property requirements from this conversation:\n\n{conversation}")
-        ])
-        
-        response = self.llm.invoke(prompt.to_messages())
-        
-        # Parse the response to get structured requirements
         try:
-            import json
-            requirements = json.loads(response.content)
+            response = openai.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Extract property requirements from this conversation:\n\n{conversation}"}
+                ],
+                temperature=0
+            )
+            
+            # Parse the response to get structured requirements
+            requirements = json.loads(response.choices[0].message.content)
             return requirements
         except Exception as e:
-            print(f"Error parsing requirements: {e}")
+            print(f"Error extracting requirements: {e}")
             return {}
     
     def find_matching_properties(self, requirements: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -152,14 +150,20 @@ class SalesAgent:
                 
             properties_text += "\n"
         
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Present these property recommendations to the client:\n\n{properties_text}")
-        ])
-        
-        response = self.llm.invoke(prompt.to_messages())
-        
-        return response.content
+        try:
+            response = openai.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Present these property recommendations to the client:\n\n{properties_text}"}
+                ],
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error formatting recommendations: {e}")
+            return properties_text
     
     def respond_to_query(self, query: str) -> str:
         """
@@ -171,15 +175,17 @@ class SalesAgent:
         Returns:
             Agent's response
         """
-        # Add the query to memory
-        self.memory.chat_memory.add_user_message(query)
+        # Add the query to conversation history
+        self.conversation_history.append({"role": "user", "content": query})
         
-        # Get the conversation history
-        conversation = "\n".join([f"{'User' if isinstance(msg, HumanMessage) else 'Agent'}: {msg.content}" 
-                                for msg in self.memory.chat_memory.messages])
+        # Get the conversation as text for requirement extraction
+        conversation_text = ""
+        for msg in self.conversation_history:
+            role_name = "User" if msg["role"] == "user" else "Agent"
+            conversation_text += f"{role_name}: {msg['content']}\n"
         
         # Extract requirements from the conversation
-        requirements = self.extract_requirements(conversation)
+        requirements = self.extract_requirements(conversation_text)
         
         # Find matching properties
         matching_properties = self.find_matching_properties(requirements)
@@ -210,15 +216,30 @@ class SalesAgent:
                 property_info += f"Type: {prop.get('property_type', 'N/A')}\n"
                 property_info += f"Area: {prop.get('area', 0)} {prop.get('area_unit', 'sq ft')}\n\n"
         
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=system_prompt),
-            SystemMessage(content=f"Current conversation:\n{conversation}{property_info}"),
-            HumanMessage(content="Generate your next response to the client:")
-        ])
-        
-        response = self.llm.invoke(prompt.to_messages())
-        
-        # Add the response to memory
-        self.memory.chat_memory.add_ai_message(response.content)
-        
-        return response.content
+        try:
+            # Create a copy of conversation history for the API call
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # Add conversation history
+            for msg in self.conversation_history:
+                messages.append(msg)
+                
+            # Add property information as a system message
+            if property_info:
+                messages.append({"role": "system", "content": property_info})
+            
+            response = openai.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.7
+            )
+            
+            agent_response = response.choices[0].message.content
+            
+            # Add the response to conversation history
+            self.conversation_history.append({"role": "assistant", "content": agent_response})
+            
+            return agent_response
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            return "I'm sorry, I'm having trouble processing your request right now. Could you please try again?"

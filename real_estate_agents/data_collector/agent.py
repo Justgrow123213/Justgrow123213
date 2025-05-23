@@ -1,14 +1,16 @@
 import os
+import json
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.prompts import ChatPromptTemplate
+import openai
 
 from real_estate_agents.database.property_db import PropertyDatabase
 
 # Load environment variables
 load_dotenv()
+
+# Set OpenAI API key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class DataCollectionAgent:
     """
@@ -20,13 +22,9 @@ class DataCollectionAgent:
     3. Store property data in the database
     """
     
-    def __init__(self, property_db: PropertyDatabase):
+    def __init__(self, property_db: PropertyDatabase, model_name: str = "gpt-4"):
         self.property_db = property_db
-        self.llm = ChatOpenAI(
-            model_name="gpt-4",
-            temperature=0,
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
+        self.model_name = model_name
         
     def process_property_description(self, description: str) -> Dict[str, Any]:
         """
@@ -64,20 +62,21 @@ class DataCollectionAgent:
         }
         """
         
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Extract structured data from this property description:\n\n{description}")
-        ])
-        
-        response = self.llm.invoke(prompt.to_messages())
-        
-        # Parse the response to get structured data
         try:
-            import json
-            property_data = json.loads(response.content)
+            response = openai.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Extract structured data from this property description:\n\n{description}"}
+                ],
+                temperature=0
+            )
+            
+            # Parse the response to get structured data
+            property_data = json.loads(response.choices[0].message.content)
             return property_data
         except Exception as e:
-            print(f"Error parsing property data: {e}")
+            print(f"Error processing property data: {e}")
             return {}
     
     def validate_property_data(self, property_data: Dict[str, Any]) -> Dict[str, Any]:
