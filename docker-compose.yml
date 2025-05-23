@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+  real-estate-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+    command: ./run.sh app
+
+  data-collector:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped
+    command: ./run.sh scraper

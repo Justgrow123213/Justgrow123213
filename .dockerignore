@@ -1,5 +1,6 @@
-# Environment variables
-.env
+# Git
+.git
+.gitignore
 
 # Python
 __pycache__/
@@ -8,6 +9,8 @@ __pycache__/
 *.so
 .Python
 env/
+venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -23,13 +26,8 @@ var/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-
-# Database
-properties.json
-data/
+# Environment variables
+.env
 
 # IDE
 .idea/
@@ -42,4 +40,10 @@ data/
 scraping.log
 
 # Docker
-# .dockerignore
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Data
+data/
+properties.json

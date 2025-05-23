@@ -9,8 +9,12 @@ class PropertyDatabase:
     In a production environment, this would be replaced with a proper database.
     """
     
-    def __init__(self, db_file: str = "properties.json"):
+    def __init__(self, db_file: str = "data/properties.json"):
         self.db_file = db_file
+        
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(self.db_file), exist_ok=True)
+        
         self.properties = self._load_properties()
         
     def _load_properties(self) -> List[Dict[str, Any]]:
