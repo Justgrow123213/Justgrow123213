@@ -3,3 +3,7 @@ uvicorn==0.23.2
 pydantic==2.4.2
 python-dotenv==1.0.0
 openai>=1.6.1
+beautifulsoup4==4.12.2
+requests==2.31.0
+lxml==4.9.3
+schedule==1.2.0

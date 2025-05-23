@@ -29,7 +29,7 @@ class Property(BaseModel):
     location: str
     price: float
     bedrooms: int
-    bathrooms: int
+    bathrooms: float  # Changed from int to float to support 1.5, 2.5 bathrooms
     property_type: str
     area: float
     description: str
@@ -41,7 +41,9 @@ async def query_properties(query: PropertyQuery):
     Query properties based on client requirements
     """
     try:
-        properties = sales_agent.find_matching_properties(query)
+        # Convert Pydantic model to dictionary
+        query_dict = query.dict()
+        properties = sales_agent.find_matching_properties(query_dict)
         return properties
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -71,5 +73,70 @@ async def add_property(property_desc: PropertyDescription):
     try:
         property_id = data_collector.add_property(property_desc.description)
         return {"property_id": property_id, "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ScrapingRequest(BaseModel):
+    source: str
+    url: str
+    max_pages: int = 1
+
+class DDPropertyScrapingRequest(BaseModel):
+    location: str = ""
+    property_type: str = ""
+    max_pages: int = 1
+
+class M2AgentScrapingRequest(BaseModel):
+    city: str = ""
+    property_type: str = ""
+    max_pages: int = 1
+
+@router.post("/scrape-website")
+async def scrape_website(request: ScrapingRequest):
+    """
+    Scrape properties from a website
+    """
+    try:
+        property_ids = data_collector.scrape_properties_from_website(
+            request.source, request.url, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/scrape-ddproperty")
+async def scrape_ddproperty(request: DDPropertyScrapingRequest):
+    """
+    Scrape properties from DDProperty website
+    """
+    try:
+        property_ids = data_collector.scrape_ddproperty(
+            request.location, request.property_type, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/scrape-m2agent")
+async def scrape_m2agent(request: M2AgentScrapingRequest):
+    """
+    Scrape properties from M2Agent website
+    """
+    try:
+        property_ids = data_collector.scrape_m2agent(
+            request.city, request.property_type, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/available-sources")
+async def get_available_sources():
+    """
+    Get a list of available scraper sources
+    """
+    try:
+        sources = data_collector.scraper_manager.available_sources()
+        return {"sources": sources}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
