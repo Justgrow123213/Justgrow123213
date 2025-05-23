@@ -29,7 +29,7 @@ class Property(BaseModel):
     location: str
     price: float
     bedrooms: int
-    bathrooms: int
+    bathrooms: float  # Changed from int to float to support 1.5, 2.5 bathrooms
     property_type: str
     area: float
     description: str
@@ -41,7 +41,9 @@ async def query_properties(query: PropertyQuery):
     Query properties based on client requirements
     """
     try:
-        properties = sales_agent.find_matching_properties(query)
+        # Convert Pydantic model to dictionary
+        query_dict = query.dict()
+        properties = sales_agent.find_matching_properties(query_dict)
         return properties
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
