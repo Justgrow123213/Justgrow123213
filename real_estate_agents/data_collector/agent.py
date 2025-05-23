@@ -1,11 +1,13 @@
 import os
 import json
 import random
+import time
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 import openai
 
 from real_estate_agents.database.property_db import PropertyDatabase
+from real_estate_agents.data_collector.scrapers import ScraperManager
 
 # Load environment variables
 load_dotenv()
@@ -27,11 +29,13 @@ class DataCollectionAgent:
     1. Extract structured data from property descriptions
     2. Validate and clean property data
     3. Store property data in the database
+    4. Scrape property data from websites
     """
     
     def __init__(self, property_db: PropertyDatabase, model_name: str = "gpt-4"):
         self.property_db = property_db
         self.model_name = model_name
+        self.scraper_manager = ScraperManager()
         
     def process_property_description(self, description: str) -> Dict[str, Any]:
         """
@@ -238,3 +242,176 @@ class DataCollectionAgent:
             property_ids.append(property_id)
             
         return property_ids
+        
+    def scrape_properties_from_website(self, source: str, url: str, max_pages: int = 1) -> List[str]:
+        """
+        Scrape properties from a website and add them to the database
+        
+        Args:
+            source: Website source (e.g., 'ddproperty', 'm2agent')
+            url: URL to scrape
+            max_pages: Maximum number of pages to scrape
+            
+        Returns:
+            List of property IDs
+        """
+        property_ids = []
+        
+        try:
+            print(f"Starting to scrape properties from {source}...")
+            
+            # Scrape property listings
+            properties = self.scraper_manager.scrape_from_source(source, url, max_pages)
+            print(f"Found {len(properties)} properties on {source}")
+            
+            for prop in properties:
+                try:
+                    # Get additional details if URL is available
+                    if prop.get('url'):
+                        details = self.scraper_manager.scrape_property_details(source, prop['url'])
+                        prop.update(details)
+                    
+                    # Validate and clean the data
+                    property_data = self.validate_property_data(prop)
+                    
+                    # Add to database
+                    property_id = self.property_db.add_property(property_data)
+                    property_ids.append(property_id)
+                    
+                    print(f"Added property: {property_data.get('location')} - {property_data.get('property_type')}")
+                    
+                    # Add delay to avoid overloading
+                    time.sleep(random.uniform(0.5, 1.5))
+                except Exception as e:
+                    print(f"Error processing property: {e}")
+        
+        except Exception as e:
+            print(f"Error scraping properties from {source}: {e}")
+        
+        print(f"Completed scraping from {source}. Added {len(property_ids)} properties to the database.")
+        return property_ids
+        
+    def scrape_ddproperty(self, location: str = "", property_type: str = "", max_pages: int = 1) -> List[str]:
+        """
+        Scrape properties from DDProperty website
+        
+        Args:
+            location: Location to search for (e.g., 'bangkok', 'phuket')
+            property_type: Type of property (e.g., 'condo', 'house')
+            max_pages: Maximum number of pages to scrape
+            
+        Returns:
+            List of property IDs
+        """
+        base_url = "https://www.ddproperty.com/en/properties-for-sale"
+        
+        # Build URL based on parameters
+        url = base_url
+        if location:
+            url += f"/{location}"
+        if property_type:
+            url += f"/{property_type}"
+            
+        return self.scrape_properties_from_website('ddproperty', url, max_pages)
+        
+    def scrape_m2agent(self, city: str = "", property_type: str = "", max_pages: int = 1) -> List[str]:
+        """
+        Scrape properties from M2Agent website
+        
+        Args:
+            city: City to search for (e.g., 'moscow', 'saint-petersburg')
+            property_type: Type of property (e.g., 'квартиры', 'дома')
+            max_pages: Maximum number of pages to scrape
+            
+        Returns:
+            List of property IDs
+        """
+        base_url = "https://www.m2agent.ru"
+        
+        # Build URL based on parameters
+        url = base_url
+        if city:
+            url += f"/{city}"
+        if property_type:
+            url += f"/{property_type}"
+        else:
+            url += "/nedvizhimost"  # Default to all real estate
+            
+        return self.scrape_properties_from_website('m2agent', url, max_pages)
+        
+    def validate_property_data(self, property_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and clean property data
+        
+        Args:
+            property_data: Raw property data
+            
+        Returns:
+            Cleaned property data
+        """
+        # Create a copy to avoid modifying the original
+        cleaned_data = property_data.copy()
+        
+        # Ensure required fields exist
+        required_fields = ['price', 'location', 'area']
+        for field in required_fields:
+            if field not in cleaned_data or cleaned_data[field] is None:
+                if field == 'price':
+                    cleaned_data[field] = 0
+                elif field == 'location':
+                    cleaned_data[field] = 'Unknown location'
+                elif field == 'area':
+                    cleaned_data[field] = 0
+        
+        # Ensure numeric fields are numeric
+        numeric_fields = ['price', 'area', 'bedrooms', 'bathrooms']
+        for field in numeric_fields:
+            if field in cleaned_data:
+                try:
+                    if field in ['bedrooms', 'bathrooms']:
+                        cleaned_data[field] = int(cleaned_data[field]) if cleaned_data[field] else 0
+                    else:
+                        cleaned_data[field] = float(cleaned_data[field]) if cleaned_data[field] else 0
+                except (ValueError, TypeError):
+                    if field in ['bedrooms', 'bathrooms']:
+                        cleaned_data[field] = 0
+                    else:
+                        cleaned_data[field] = 0.0
+            else:
+                if field in ['bedrooms', 'bathrooms']:
+                    cleaned_data[field] = 0
+                else:
+                    cleaned_data[field] = 0.0
+        
+        # Ensure string fields are strings
+        string_fields = ['location', 'property_type', 'area_unit', 'source']
+        for field in string_fields:
+            if field in cleaned_data:
+                cleaned_data[field] = str(cleaned_data[field]) if cleaned_data[field] else ''
+            else:
+                cleaned_data[field] = ''
+        
+        # Set default values for missing fields
+        if 'property_type' not in cleaned_data or not cleaned_data['property_type']:
+            cleaned_data['property_type'] = 'Unknown'
+            
+        if 'area_unit' not in cleaned_data or not cleaned_data['area_unit']:
+            cleaned_data['area_unit'] = 'sq m'
+            
+        if 'source' not in cleaned_data or not cleaned_data['source']:
+            cleaned_data['source'] = 'Unknown'
+            
+        # Ensure features is a list
+        if 'features' in cleaned_data:
+            if not isinstance(cleaned_data['features'], list):
+                cleaned_data['features'] = [str(cleaned_data['features'])]
+        else:
+            cleaned_data['features'] = []
+            
+        # Ensure description is a string
+        if 'description' in cleaned_data:
+            cleaned_data['description'] = str(cleaned_data['description']) if cleaned_data['description'] else ''
+        else:
+            cleaned_data['description'] = ''
+            
+        return cleaned_data

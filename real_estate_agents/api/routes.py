@@ -73,3 +73,68 @@ async def add_property(property_desc: PropertyDescription):
         return {"property_id": property_id, "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class ScrapingRequest(BaseModel):
+    source: str
+    url: str
+    max_pages: int = 1
+
+class DDPropertyScrapingRequest(BaseModel):
+    location: str = ""
+    property_type: str = ""
+    max_pages: int = 1
+
+class M2AgentScrapingRequest(BaseModel):
+    city: str = ""
+    property_type: str = ""
+    max_pages: int = 1
+
+@router.post("/scrape-website")
+async def scrape_website(request: ScrapingRequest):
+    """
+    Scrape properties from a website
+    """
+    try:
+        property_ids = data_collector.scrape_properties_from_website(
+            request.source, request.url, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/scrape-ddproperty")
+async def scrape_ddproperty(request: DDPropertyScrapingRequest):
+    """
+    Scrape properties from DDProperty website
+    """
+    try:
+        property_ids = data_collector.scrape_ddproperty(
+            request.location, request.property_type, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/scrape-m2agent")
+async def scrape_m2agent(request: M2AgentScrapingRequest):
+    """
+    Scrape properties from M2Agent website
+    """
+    try:
+        property_ids = data_collector.scrape_m2agent(
+            request.city, request.property_type, request.max_pages
+        )
+        return {"property_ids": property_ids, "count": len(property_ids), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/available-sources")
+async def get_available_sources():
+    """
+    Get a list of available scraper sources
+    """
+    try:
+        sources = data_collector.scraper_manager.available_sources()
+        return {"sources": sources}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
