@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 import openai
@@ -10,7 +11,13 @@ from real_estate_agents.database.property_db import PropertyDatabase
 load_dotenv()
 
 # Set OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
+if api_key and api_key != "your_openai_api_key_here":
+    openai.api_key = api_key
+    USE_MOCK = False
+else:
+    USE_MOCK = True
+    print("No valid OpenAI API key found. Using mock implementation for DataCollectionAgent.")
 
 class DataCollectionAgent:
     """
@@ -36,6 +43,51 @@ class DataCollectionAgent:
         Returns:
             Structured property data
         """
+        if USE_MOCK:
+            # Generate mock property data based on the description
+            property_types = ["Apartment", "House", "Condo", "Townhouse"]
+            locations = ["New York", "Los Angeles", "Chicago", "Miami", "San Francisco"]
+            features = ["Hardwood floors", "Granite countertops", "Stainless steel appliances", 
+                       "Central AC", "Balcony", "Fireplace", "Walk-in closet", "Pool", "Gym"]
+            
+            # Extract some basic info from the description
+            bedrooms = 2
+            if "1 bed" in description.lower():
+                bedrooms = 1
+            elif "2 bed" in description.lower():
+                bedrooms = 2
+            elif "3 bed" in description.lower():
+                bedrooms = 3
+            elif "4 bed" in description.lower():
+                bedrooms = 4
+                
+            # Try to extract location
+            location = random.choice(locations)
+            for loc in locations:
+                if loc.lower() in description.lower():
+                    location = loc
+                    break
+                    
+            # Try to extract property type
+            property_type = random.choice(property_types)
+            for pt in property_types:
+                if pt.lower() in description.lower():
+                    property_type = pt
+                    break
+            
+            # Generate random property data
+            return {
+                "location": location,
+                "price": random.randint(200000, 1500000),
+                "bedrooms": bedrooms,
+                "bathrooms": random.randint(1, 3),
+                "property_type": property_type,
+                "area": random.randint(600, 2500),
+                "area_unit": "sq ft",
+                "features": random.sample(features, random.randint(3, 6)),
+                "description": description[:200] + "..." if len(description) > 200 else description
+            }
+        
         system_prompt = """
         You are a real estate data extraction expert. Your task is to extract structured information from property descriptions.
         Extract the following information:

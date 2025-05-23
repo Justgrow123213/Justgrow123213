@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 import openai
@@ -10,7 +11,13 @@ from real_estate_agents.database.property_db import PropertyDatabase
 load_dotenv()
 
 # Set OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
+if api_key and api_key != "your_openai_api_key_here":
+    openai.api_key = api_key
+    USE_MOCK = False
+else:
+    USE_MOCK = True
+    print("No valid OpenAI API key found. Using mock implementation for SalesAgent.")
 
 class SalesAgent:
     """
@@ -39,6 +46,60 @@ class SalesAgent:
         Returns:
             Dictionary of property requirements
         """
+        if USE_MOCK:
+            # Simple keyword-based extraction for mock implementation
+            requirements = {
+                "location": None,
+                "min_price": None,
+                "max_price": None,
+                "bedrooms": None,
+                "bathrooms": None,
+                "property_type": None,
+                "min_area": None,
+                "max_area": None,
+                "additional_requirements": None
+            }
+            
+            # Extract location
+            locations = ["New York", "Los Angeles", "Chicago", "Miami", "San Francisco"]
+            for loc in locations:
+                if loc.lower() in conversation.lower():
+                    requirements["location"] = loc
+                    break
+            
+            # Extract property type
+            property_types = ["apartment", "house", "condo", "townhouse"]
+            for pt in property_types:
+                if pt.lower() in conversation.lower():
+                    requirements["property_type"] = pt.capitalize()
+                    break
+            
+            # Extract bedrooms
+            if "1 bedroom" in conversation.lower() or "1 bed" in conversation.lower():
+                requirements["bedrooms"] = 1
+            elif "2 bedroom" in conversation.lower() or "2 bed" in conversation.lower():
+                requirements["bedrooms"] = 2
+            elif "3 bedroom" in conversation.lower() or "3 bed" in conversation.lower():
+                requirements["bedrooms"] = 3
+            elif "4 bedroom" in conversation.lower() or "4 bed" in conversation.lower():
+                requirements["bedrooms"] = 4
+            
+            # Extract price range
+            if "$" in conversation:
+                price_text = conversation.split("$")[1].split()[0].replace(",", "")
+                try:
+                    price = float(price_text)
+                    if price < 1000:  # Assuming this is in thousands
+                        price *= 1000
+                    
+                    # Set a range around the mentioned price
+                    requirements["min_price"] = price * 0.8
+                    requirements["max_price"] = price * 1.2
+                except:
+                    pass
+            
+            return requirements
+            
         system_prompt = """
         You are a real estate expert. Your task is to extract property requirements from a conversation with a client.
         Extract the following information if mentioned:
@@ -126,12 +187,6 @@ class SalesAgent:
         if not properties:
             return "I couldn't find any properties matching your requirements. Would you like to adjust your search criteria?"
         
-        system_prompt = """
-        You are a helpful real estate agent. Your task is to present property recommendations to a client in a friendly, informative way.
-        Format the properties in a clear, easy-to-read format, highlighting key features and benefits.
-        Be enthusiastic but honest about the properties.
-        """
-        
         properties_text = ""
         for i, prop in enumerate(properties):
             properties_text += f"Property {i+1}:\n"
@@ -149,6 +204,28 @@ class SalesAgent:
                 properties_text += f"Description: {prop['description']}\n"
                 
             properties_text += "\n"
+        
+        if USE_MOCK:
+            # Create a simple formatted recommendation
+            formatted_text = "Here are some properties that match your requirements:\n\n"
+            
+            for i, prop in enumerate(properties[:3]):  # Limit to top 3
+                formatted_text += f"Property {i+1}: {prop.get('property_type', 'Property')} in {prop.get('location', 'a great location')}\n"
+                formatted_text += f"This ${prop.get('price', 0):,.2f} property offers {prop.get('bedrooms', 0)} bedrooms and {prop.get('bathrooms', 0)} bathrooms with {prop.get('area', 0)} {prop.get('area_unit', 'sq ft')} of living space.\n"
+                
+                if prop.get('features'):
+                    formatted_text += f"You'll love the {', '.join(prop['features'][:3])}.\n"
+                
+                formatted_text += "\n"
+                
+            formatted_text += "Would you like more information about any of these properties?"
+            return formatted_text
+        
+        system_prompt = """
+        You are a helpful real estate agent. Your task is to present property recommendations to a client in a friendly, informative way.
+        Format the properties in a clear, easy-to-read format, highlighting key features and benefits.
+        Be enthusiastic but honest about the properties.
+        """
         
         try:
             response = openai.chat.completions.create(
@@ -189,6 +266,50 @@ class SalesAgent:
         
         # Find matching properties
         matching_properties = self.find_matching_properties(requirements)
+        
+        if USE_MOCK:
+            # Generate a simple response based on the query and matching properties
+            agent_response = ""
+            
+            # Check if this is a greeting or introduction
+            greetings = ["hello", "hi", "hey", "greetings", "good morning", "good afternoon", "good evening"]
+            if any(greeting in query.lower() for greeting in greetings) or len(self.conversation_history) <= 1:
+                agent_response = "Hello! I'm Alex, your real estate agent. How can I help you find your ideal property today?"
+            
+            # Check if user is asking about properties
+            elif any(word in query.lower() for word in ["property", "house", "apartment", "condo", "home"]):
+                if matching_properties:
+                    agent_response = f"I found {len(matching_properties)} properties that might interest you based on your requirements."
+                    
+                    if requirements.get("location"):
+                        agent_response += f" The properties are located in {requirements['location']}."
+                    
+                    if requirements.get("bedrooms"):
+                        agent_response += f" They have {requirements['bedrooms']} bedrooms."
+                    
+                    agent_response += " Would you like to see more details about these properties?"
+                else:
+                    agent_response = "I couldn't find any properties matching your exact requirements. Could you tell me more about what you're looking for? Or perhaps we could broaden the search criteria."
+            
+            # Check if user is asking about specific features
+            elif any(word in query.lower() for word in ["feature", "amenity", "include", "has"]):
+                agent_response = "Properties in our database come with various features like hardwood floors, granite countertops, stainless steel appliances, central AC, balconies, and more. What specific features are you interested in?"
+            
+            # Check if user is asking about price
+            elif any(word in query.lower() for word in ["price", "cost", "afford", "budget", "expensive", "cheap"]):
+                if requirements.get("min_price") and requirements.get("max_price"):
+                    agent_response = f"Based on your budget of ${int(requirements['min_price']):,} to ${int(requirements['max_price']):,}, I can show you several options that might work for you."
+                else:
+                    agent_response = "Property prices vary depending on location, size, and features. Could you tell me your budget range so I can find suitable options for you?"
+            
+            # Default response for other queries
+            else:
+                agent_response = "I'd be happy to help you with that. Could you provide more details about what you're looking for in a property? Things like location, number of bedrooms, budget, and any specific features would be helpful."
+            
+            # Add the response to conversation history
+            self.conversation_history.append({"role": "assistant", "content": agent_response})
+            
+            return agent_response
         
         # Generate a response based on the conversation and available properties
         system_prompt = """
