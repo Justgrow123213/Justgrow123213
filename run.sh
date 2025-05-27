@@ -13,9 +13,13 @@ else
     source venv/bin/activate
 fi
 
-# Initialize the database with sample data
-echo "Initializing database with sample data..."
-python init_database.py
+# Check if test data exists, if not generate it
+if [ ! -f "real_estate_agents/database/data/properties.json" ]; then
+    echo "Generating test data..."
+    python generate_test_data.py
+else
+    echo "Using existing test data..."
+fi
 
 if [ "$MODE" = "app" ]; then
     # Run the application
